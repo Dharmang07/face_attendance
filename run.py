@@ -2,16 +2,18 @@ import cv2
 import face_recognition
 import os
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from PIL import Image
 import mysql.connector
 import sys
 import pickle
 
 last_seen = {}
-MIN_GAP_MINUTES = 0.2  # exit cooldown (change to 1 for testing)
+MIN_GAP_MINUTES = 0.05  # exit/re-entry cooldown (3 seconds)
 AUTO_EXIT_TIME = "00:00:00"  # 12:00 AM auto-exit for missed checkouts
 last_auto_close_date = None
+RECOGNITION_TOLERANCE = 0.45  # lower = stricter matching
+MIN_DISTANCE_GAP = 0.08  # require clear separation from second-best match
 
 # ================= CONFIG =================
 PATH = 'faces'
@@ -210,6 +212,47 @@ def get_employee_name(image_filename):
     return image_filename.upper()  # fallback if not found
 
 
+def coerce_db_time(value):
+    if value is None:
+        return None
+
+    if isinstance(value, datetime):
+        return value.time()
+
+    if hasattr(value, "seconds") and not isinstance(value, str):
+        return (datetime.min + value).time()
+
+    if isinstance(value, str):
+        value = value.strip()
+        for fmt in ("%H:%M:%S", "%H:%M:%S.%f"):
+            try:
+                return datetime.strptime(value, fmt).time()
+            except ValueError:
+                continue
+        return None
+
+    if hasattr(value, "hour") and hasattr(value, "minute"):
+        return value
+
+    return None
+
+
+def is_confident_match(face_distances, best_index):
+    if len(face_distances) == 0:
+        return False
+
+    best_distance = float(face_distances[best_index])
+    if best_distance > RECOGNITION_TOLERANCE:
+        return False
+
+    if len(face_distances) == 1:
+        return True
+
+    sorted_distances = np.sort(face_distances)
+    second_best_distance = float(sorted_distances[1])
+    return (second_best_distance - best_distance) >= MIN_DISTANCE_GAP
+
+
 # ================= MYSQL ENTRY / EXIT =================
 def auto_close_missed_exits(cursor, today):
     global last_auto_close_date
@@ -291,12 +334,18 @@ def markAttendance(image_filename):
 
     # ---------- EXIT ----------
     elif record[1] is not None and record[2] is None:
-        if emp_name not in last_seen:
-            last_seen[emp_name] = now
-            conn.close()
-            return emp_name
+        seen_at = last_seen.get(emp_name)
+        if seen_at is None:
+            in_time = coerce_db_time(record[1])
+            if in_time is not None:
+                seen_at = datetime.combine(now.date(), in_time)
+                if seen_at > now:
+                    seen_at = seen_at - timedelta(days=1)
+            else:
+                seen_at = now
+            last_seen[emp_name] = seen_at
 
-        diff_minutes = (now - last_seen[emp_name]).total_seconds() / 60
+        diff_minutes = (now - seen_at).total_seconds() / 60
 
         if diff_minutes >= MIN_GAP_MINUTES:
             cursor.execute(
@@ -313,13 +362,10 @@ def markAttendance(image_filename):
 
     # ---------- RE-ENTRY (new row after exit) ----------
     elif record[2] is not None:
-        out_val = record[2]
-        if isinstance(out_val, datetime):
-            out_time = out_val.time()
-        elif hasattr(out_val, "seconds"):  # timedelta from MySQL TIME
-            out_time = (datetime.min + out_val).time()
-        else:
-            out_time = out_val  # already a time object
+        out_time = coerce_db_time(record[2])
+        if out_time is None:
+            conn.close()
+            return emp_name
 
         last_out_time = datetime.combine(now.date(), out_time)
         diff_minutes = (now - last_out_time).total_seconds() / 60
@@ -351,9 +397,38 @@ if not encodeListKnown:
 
 print(f"{len(encodeListKnown)} faces encoded. Starting camera...")
 
-cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    print("Could not open camera")
+def open_camera(camera_index=0):
+    backend_candidates = []
+    if hasattr(cv2, "CAP_DSHOW"):
+        backend_candidates.append(("CAP_DSHOW", cv2.CAP_DSHOW))
+    if hasattr(cv2, "CAP_MSMF"):
+        backend_candidates.append(("CAP_MSMF", cv2.CAP_MSMF))
+    backend_candidates.append(("CAP_ANY", cv2.CAP_ANY))
+
+    last_error = None
+    for backend_name, backend in backend_candidates:
+        try:
+            cap_obj = cv2.VideoCapture(camera_index, backend)
+        except Exception as exc:
+            last_error = exc
+            print(f"Camera init failed with {backend_name}: {exc}")
+            continue
+
+        if cap_obj.isOpened():
+            print(f"Camera opened with {backend_name}")
+            return cap_obj
+
+        cap_obj.release()
+
+    if last_error is not None:
+        print(f"Could not initialize camera: {last_error}")
+    else:
+        print("Could not open camera. Ensure webcam is connected and not used by another app.")
+    return None
+
+
+cap = open_camera(0)
+if cap is None:
     sys.exit(1)
 
 while True:
@@ -372,20 +447,20 @@ while True:
     encodesCurFrame = face_recognition.face_encodings(imgS, facesCurFrame)
 
     for encodeFace, faceLoc in zip(encodesCurFrame, facesCurFrame):
-        matches = face_recognition.compare_faces(
-            encodeListKnown, encodeFace, tolerance=0.6
-        )
         faceDis = face_recognition.face_distance(
             encodeListKnown, encodeFace
         )
+        if len(faceDis) == 0:
+            continue
 
         matchIndex = np.argmin(faceDis)
+        known_match = is_confident_match(faceDis, matchIndex)
 
-        if matches[matchIndex]:
+        y1, x2, y2, x1 = [v * 4 for v in faceLoc]
+
+        if known_match:
             image_filename = knownClassNames[matchIndex]
-            emp_name = get_employee_name(image_filename)
-
-            y1, x2, y2, x1 = [v * 4 for v in faceLoc]
+            emp_name = markAttendance(image_filename) or image_filename.upper()
 
             cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
             cv2.rectangle(img, (x1, y2 - 35), (x2, y2),
@@ -394,8 +469,13 @@ while True:
             cv2.putText(img, emp_name, (x1 + 6, y2 - 6),
                         cv2.FONT_HERSHEY_COMPLEX, 1,
                         (255, 255, 255), 2)
-
-            markAttendance(image_filename)
+        else:
+            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 2)
+            cv2.rectangle(img, (x1, y2 - 35), (x2, y2),
+                          (0, 0, 255), cv2.FILLED)
+            cv2.putText(img, "UNKNOWN PERSON", (x1 + 6, y2 - 6),
+                        cv2.FONT_HERSHEY_COMPLEX, 0.7,
+                        (255, 255, 255), 2)
 
     cv2.imshow("AI Face Attendance | Press Q to Exit", img)
 
@@ -408,3 +488,5 @@ for _ in range(3):
     cv2.waitKey(1)
 cv2.destroyAllWindows()
 cv2.waitKey(1)
+
+
