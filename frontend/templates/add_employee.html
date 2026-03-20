@@ -7,176 +7,51 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-1: #f7efe4;
-            --bg-2: #d8e8e2;
-            --ink: #102a43;
-            --muted: #486581;
-            --line: rgba(16, 42, 67, 0.14);
-            --card: rgba(255, 255, 255, 0.85);
-            --primary: #0f766e;
-            --danger: #b91c1c;
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            min-height: 100vh;
-            font-family: "Space Grotesk", sans-serif;
-            color: var(--ink);
-            background: radial-gradient(circle at 15% 10%, #fff6df 0%, transparent 38%),
-                        radial-gradient(circle at 85% 5%, #d6eef4 0%, transparent 40%),
-                        linear-gradient(130deg, var(--bg-1), var(--bg-2));
-        }
-
-        .page {
-            width: min(760px, 92vw);
-            margin: 2rem auto;
-        }
-
-        .card {
-            background: var(--card);
-            border: 1px solid var(--line);
-            border-radius: 1.2rem;
-            padding: 1.4rem;
-            box-shadow: 0 24px 44px rgba(16, 42, 67, 0.1);
-            backdrop-filter: blur(10px);
-            animation: rise 430ms ease-out;
-        }
-
-        h1 {
-            margin: 0;
-            font-size: clamp(1.2rem, 2vw, 1.7rem);
-        }
-
-        .subtitle {
-            margin: 0.45rem 0 1.2rem;
-            color: var(--muted);
-            font-size: 0.93rem;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.85rem;
-        }
-
-        .field {
-            margin-bottom: 0.9rem;
-        }
-
-        .full {
-            grid-column: 1 / -1;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 0.42rem;
-            font-size: 0.9rem;
-            font-weight: 600;
-        }
-
-        input {
-            width: 100%;
-            padding: 0.72rem 0.8rem;
-            border-radius: 0.75rem;
-            border: 1px solid var(--line);
-            background: rgba(255, 255, 255, 0.9);
-            font: inherit;
-            color: var(--ink);
-            outline: none;
-            transition: border-color 140ms ease, box-shadow 140ms ease;
-        }
-
-        input:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.16);
-        }
-
-        .actions {
-            display: flex;
-            gap: 0.65rem;
-            flex-wrap: wrap;
-            margin-top: 0.35rem;
-        }
-
-        .btn {
-            text-decoration: none;
-            border: 0;
-            border-radius: 0.76rem;
-            padding: 0.68rem 1rem;
-            font: inherit;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 140ms ease, box-shadow 140ms ease;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 10px 20px rgba(16, 42, 67, 0.15);
-        }
-
-        .btn-primary {
-            background: var(--primary);
-            color: #fff;
-        }
-
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.9);
-            border: 1px solid var(--line);
-            color: var(--ink);
-        }
-
-        @media (max-width: 700px) {
-            .grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        @keyframes rise {
-            from {
-                opacity: 0;
-                transform: translateY(8px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-<div class="page">
-    <section class="card">
+<div class="page-shell">
+    <section class="form-card">
         <h1>Add New Employee</h1>
-        <p class="subtitle">Register employee details and upload one clear face image. Employee ID is auto-generated.</p>
+        <p>Register employee details and upload one clear face image. Employee ID is generated automatically.</p>
 
-        <form method="POST" enctype="multipart/form-data">
-            <div class="grid">
+        <form method="POST" enctype="multipart/form-data" class="employee-form">
+            <div class="form-grid">
                 <div class="field">
                     <label for="emp_name">Employee Name</label>
-                    <input id="emp_name" type="text" name="emp_name" required>
+                    <input id="emp_name" class="text-input" type="text" name="emp_name" placeholder="Enter employee name" required>
                 </div>
 
-                <div class="field full">
+                <div class="field field-full">
                     <label for="image">Employee Image</label>
-                    <input id="image" type="file" name="image" accept="image/*" required>
+                    <div class="upload-box">
+                        <input
+                            id="image"
+                            class="file-input"
+                            type="file"
+                            name="image"
+                            accept="image/*"
+                            required
+                            data-image-input
+                        >
+                        <div class="file-name" data-file-name>No image selected</div>
+                        <div class="preview-box">
+                            <img src="" alt="Selected employee preview" data-image-preview hidden>
+                            <div class="preview-placeholder" data-preview-placeholder>
+                                Choose a clear face image to preview it here before saving.
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div class="actions">
                 <button class="btn btn-primary" type="submit">Add Employee</button>
-                <a href="/dashboard" class="btn btn-secondary">Back to Dashboard</a>
+                <a href="/dashboard" class="btn btn-outline">Back to Dashboard</a>
             </div>
         </form>
     </section>
 </div>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
