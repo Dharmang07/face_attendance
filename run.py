@@ -9,7 +9,7 @@ import sys
 import pickle
 
 last_seen = {}
-MIN_GAP_MINUTES = 0.05  # exit/re-entry cooldown (3 seconds)
+MIN_GAP_MINUTES = 0.1  # exit/re-entry cooldown (3 seconds)
 AUTO_EXIT_TIME = "00:00:00"  # 12:00 AM auto-exit for missed checkouts
 last_auto_close_date = None
 RECOGNITION_TOLERANCE = 0.45  # lower = stricter matching

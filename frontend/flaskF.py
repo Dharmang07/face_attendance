@@ -1,9 +1,35 @@
+import os
+import sys
+from uuid import uuid4
+
+
+def _add_local_venv_site_packages():
+    if sys.prefix != sys.base_prefix:
+        return
+
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    candidates = [
+        os.path.join(project_root, "venv", "Lib", "site-packages"),
+        os.path.join(
+            project_root,
+            "venv",
+            "lib",
+            f"python{sys.version_info.major}.{sys.version_info.minor}",
+            "site-packages",
+        ),
+    ]
+
+    for path in candidates:
+        if os.path.isdir(path) and path not in sys.path:
+            sys.path.insert(0, path)
+            return
+
+
+_add_local_venv_site_packages()
+
 from flask import Flask, render_template, redirect, request, session
 import mysql.connector
 import subprocess
-import sys
-import os
-from uuid import uuid4
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
